@@ -25,20 +25,23 @@ async function main() {
 
   const selectAnswer = () =>
     page.evaluate(() => {
-      const seats = Array.from(document.querySelectorAll('[data-chat-flow-kind="assistant-step"]'));
-      const seat = seats.find((s) => (s.textContent || '').length > 400);
-      if (!seat) return null;
-      const walker = document.createTreeWalker(seat, NodeFilter.SHOW_TEXT);
-      const picked = [];
-      let node;
-      while ((node = walker.nextNode())) {
-        const p = node.parentElement;
-        if (p && p.closest && p.closest('[data-variant="think"],[data-streaming]')) continue;
-        picked.push(node);
-        const acc = picked.reduce((n, x) => n + (x.textContent || '').length, 0);
-        if (acc >= 80) break;
+      const seats = Array.from(document.querySelectorAll('[data-chat-flow-kind="assistant-step"]')).reverse();
+      let seat = null;
+      let picked = [];
+      for (const s of seats) {
+        const walker = document.createTreeWalker(s, NodeFilter.SHOW_TEXT);
+        const cand = [];
+        let node;
+        while ((node = walker.nextNode())) {
+          const p = node.parentElement;
+          if (p && p.closest && p.closest('[data-variant="think"],[data-streaming]')) continue;
+          cand.push(node);
+          const acc = cand.reduce((n, x) => n + (x.textContent || '').length, 0);
+          if (acc >= 80) break;
+        }
+        if (cand.length) { seat = s; picked = cand; break; }
       }
-      if (picked.length === 0) return null;
+      if (!seat) return null;
       const range = document.createRange();
       range.setStart(picked[0], 0);
       let acc = 0;
