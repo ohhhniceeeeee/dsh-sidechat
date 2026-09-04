@@ -15,3 +15,9 @@ data/
 
 # Scratch
 scratch/
+
+# Probe tooling artifacts
+tools/probe/.profiles/
+tools/probe/.npm-cache/
+tools/probe/out*.json
+tools/probe/shot*.png
