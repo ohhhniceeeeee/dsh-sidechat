@@ -254,7 +254,28 @@ window.__ModuleLoader__.load({
           if (ev.target && closestFrom(ev.target, '[data-dsh-sidechat]')) return;
           setTimeout(hideAsk, 0);
         };
-        const onScroll = () => hideAsk();
+        // While the model is thinking/reasoning the chat auto-scrolls as chunks
+        // append. That scroll must never dismiss the button (the reported
+        // "button flashes away during thinking" bug): re-anchor the button to
+        // the still-live selection each frame instead, and only hide it once the
+        // selection is really gone or scrolled out of the viewport.
+        let scrollRaf = 0;
+        const onScroll = () => {
+          if (scrollRaf) return;
+          scrollRaf = requestAnimationFrame(() => {
+            scrollRaf = 0;
+            const cur = store.get();
+            if (!cur.ask) return;
+            const info = selectionInfo();
+            if (!info || info.y < -4 || info.y > window.innerHeight + 4) {
+              hideAsk();
+              return;
+            }
+            if (info.x !== cur.ask.x || info.y !== cur.ask.y) {
+              store.set({ ask: { ...cur.ask, x: info.x, y: info.y } });
+            }
+          });
+        };
         document.addEventListener('mouseup', onUp);
         document.addEventListener('mousedown', onDown);
         document.addEventListener('scroll', onScroll, true);
