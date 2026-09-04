@@ -42,11 +42,12 @@ window.__ModuleLoader__.load({
     const THINK = '[data-variant="think"]';
     const STREAMING = '[data-streaming]';
 
-    const inject = [
-      '@deepseek-ai/dsh-client-runtime',
-      '@deepseek-ai/dsh-client-ui-layout',
-      '@deepseek-ai/dsh-client-ui-conversation',
-    ];
+    // `package.json#dsh.client.inject` names package-level load dependencies.
+    // The plugin returned here is mounted by Cordis, whose `inject` field must
+    // instead name the runtime services that this implementation reads from
+    // `ctx`. Using package names here leaves the entry parked forever because
+    // no service is registered under those names.
+    const inject = ['slots', 'sessions', 'workspaces', 'conversation'];
 
     // ------------------------------------------------------------- helpers --
     const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -247,7 +248,10 @@ window.__ModuleLoader__.load({
           if (ev.target && closestFrom(ev.target, '[data-dsh-sidechat]')) return;
           showAsk();
         };
-        const onDown = () => {
+        const onDown = (ev) => {
+          // Pressing inside our own UI (the Ask button or the panel) must never
+          // dismiss the floating button before the click can register.
+          if (ev.target && closestFrom(ev.target, '[data-dsh-sidechat]')) return;
           setTimeout(hideAsk, 0);
         };
         const onScroll = () => hideAsk();
@@ -308,7 +312,7 @@ window.__ModuleLoader__.load({
 
       // Register our overlay seat. shell.overlay is a frame-wide list seat.
       ctx.slots.inject('shell.overlay', function* overlayContribution() {
-        yield ctx.slots.register({ name: 'shell.overlay', key: 'dsh-sidechat' }, function SideChatRoot() {
+        yield ctx.slots.register({ name: 'shell.overlay', id: 'dsh-sidechat' }, function SideChatRoot() {
           const state = useSyncExternalStore(store.subscribe, store.get);
           const st = useRef(state);
           st.current = state;
@@ -328,7 +332,14 @@ window.__ModuleLoader__.load({
           // Ask again while the panel is already open: focus and prefill again.
           const requestAsk = () => {
             const cur = st.current;
-            if (cur.ask) openPanel(cur.ask.text);
+            if (!cur.ask) return;
+            openPanel(cur.ask.text);
+            // Clear the page selection so the button does not linger or retrigger.
+            try {
+              const sel = window.getSelection();
+              if (sel) sel.removeAllRanges();
+            } catch (e) {}
+            store.set({ ask: null });
           };
 
           const iframeSrc =
@@ -347,7 +358,7 @@ window.__ModuleLoader__.load({
                     onClick: requestAsk,
                     onMouseDown: (e) => e.preventDefault(),
                   },
-                  '\u255f \u63d0\u95ee'
+                  '\u5728\u4fa7\u8fb9\u804a\u5929\u63d0\u95ee'
                 )
               : null,
             state.panel
@@ -373,7 +384,12 @@ window.__ModuleLoader__.load({
                       id: FRAME_ID,
                       className: 'dshsc-frame',
                       src: iframeSrc,
-                      onLoad: () => store.set({ ready: true }),
+                      // A loaded document is not necessarily ready to receive
+                      // plugin messages yet. Wait for the side instance's
+                      // explicit dsh-sidechat:ready handshake instead.
+                      onLoad: () => {
+                        if (!store.get().ready) store.set({ status: 'loading' });
+                      },
                     })
                   )
                 )
