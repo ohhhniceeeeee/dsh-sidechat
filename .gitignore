@@ -1,0 +1,17 @@
+# Node
+node_modules/
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local DSH deployment artifacts (never commit)
+local/
+data/
+*.pid
+
+# Scratch
+scratch/
