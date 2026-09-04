@@ -103,6 +103,13 @@
 - 行插入在 profile 自己的 `cordis.patch.yml`（`- insert: [{id,name}]`，与 dsh-web-app 同构）；纯浏览器行 Node 半可空 apply（本插件 index.js 即空 apply）。
 - iframe 双实例：实测 720px iframe 内第二实例正常 boot，sidebar 自动折叠 56px rail、center 664（需 ≥ ~696 宽才不挤压）。
 
+### 6.5 v0 落地修正（2026-09-04 实测迭代）
+- **两个注入通道不要混淆**：`package.json#dsh.client.inject` 写包名（kernel/模块装载顺序，boot 图里可见）；而插件模块 `exports.inject`（Cordis 服务注入）**必须写 ctx 服务名**（`slots/sessions/workspaces/conversation`）。此前误写包名导致 entry 永久 pending（"Failed to load plugins / waiting for services"）。由 Codex 协助定位修复。
+- `ctx.slots.register({name:'shell.overlay', id:'dsh-sidechat'}, Component)`（贡献条目标识用 `id`）。
+- iframe `load` 事件 ≠ 可收消息：等待内层显式 `dsh-sidechat:ready` 握手后才发 `open`。
+- 浮标按钮的 document mousedown 兜底隐藏必须跳过自身 UI（`[data-dsh-sidechat]`），否则按下即消失、无法点击。
+- 自动化 E2E（`tools/probe/probe3.js`，无头 Chrome + playwright-core）已通过：思考选词不弹、答案选词弹「在侧边聊天提问」、按下不消失、点击开面板、iframe 内会话创建并预填 60 字符、关闭拆除面板、零 console error。
+
 ## 7. 风险登记
 
 | 风险 | 等级 | 缓解 |
