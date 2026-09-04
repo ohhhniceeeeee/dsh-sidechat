@@ -24,4 +24,5 @@ docs/design.md           ← 设计文档（可行性分析、约束、协议）
 2. 在 `$DSH_HOME/profiles/web/cordis.patch.yml` 的 `[]` 改为插入行（见 docs/design.md）；
 3. 重启 `dsh web`（`stop-dsh.cmd` + `dsh web`）。
 
-状态：研究中（host 删除配方 / 选词与预填机制考证中），尚未写插件代码。
+状态：v0 已实现并入库；正在做"安装进 web profile + 重启 GUI + 真机验证"。
+清理语义：临时会话关闭后通过官方 `workspace.archiveSession` 归档（目录永久隐藏；DSH 无删除会话 API，归档即产品级"移除"）。

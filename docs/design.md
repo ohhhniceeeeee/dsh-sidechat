@@ -1,6 +1,6 @@
 # dsh-sidechat 设计文档
 
-> 状态：设计中（host 删除配方、选词边界与预填机制取证中）。
+> 状态：**v0 已实现并入库**（client.js / index.js / package.json），待安装进 profile 验证。
 > 版本基线：DSH `0.1.1-rc.2`（`D:\dsh\app\node_modules\@deepseek-ai\*`）。
 
 ## 1. 背景与目标
@@ -77,19 +77,40 @@
 5. 迭代：改 `client.js` 后无需重启（client-hmr 轮询该 bundle 变更即热更；插件状态会重置）。新增行/改包名需要重启。
 6. 注意：重启会中断正在进行的会话 agent（宿主进程重启）。
 
-## 6. 待取证结论（研究子代理输出后将填充）
+## 6. 研究结论（两轮只读取证，2026-09-04）
 
-- [ ] Host 侧"彻底删除会话"配方或 fallback（归档）决策 —— 影响临时会话清理。
-- [ ] 正式回答 vs 思考的 DOM/数据判据（划词启用条件）。
-- [ ] composer 预填 API 与 staged 要求。
-- [ ] 面板 iframe 内 UI 精简方式（折叠侧栏即可 / 需隐藏 rail 的 CSS 锚点）。
+### 6.1 Host 删除配方 → 结论：**采用 archive 语义，无需 host half**
+- 浏览器 RPC 固定，无 session.delete/remove/end（`rpc-map.d.ts` 全表）。RPC `session.create` 建的会话无任何句柄可拆卸；唯一可 dispose 的是宿主端 `ctx.agents.create` 自建并持有 handle 的会话（需复刻 api-proxy 私有 preset 装配），存储 JSONL 删除无官方 API（私有路径 + retire 尾 flush 竞态）→ **不可安全"彻底删除文件"**。
+- 安全且官方支持的隐藏 = `workspace.archiveSession(id)`：持久、所有分组/搜索面隐藏、UI 无 unarchive；代价是文件/账号槽/archive 集常驻（与产品现状一致——Web 本就没有删除会话功能）。
+- 采用语义（与用户确认的目录语义一致）：
+  - 打开期间允许目录显示该行；
+  - 关闭面板：若会话已有真实内容（非 blank）→ archive（目录永久不再出现）；blank 会话本就不显示目录行且可被 New Session 复用 → 不动；
+  - 异常恢复：主窗口 localStorage 记 `{sessionId}`，插件启动时对残留非 blank 侧会话执行 archive（幂等，未知 id 吞错）。
+
+### 6.2 正式回答 vs 思考（划词判据，已用无头浏览器实测确认）
+- 消息座位：`[data-chat-flow-kind]`，assistant 为 `assistant-step`（实测 36 座位）；思考区根 `[data-variant="think"]`（`data-state` ok/running）；流式根 `[data-streaming]`。
+- 判据：选区共同祖先落在 assistant-step 座位内；两个端点与整个 Range 均不与 `[data-variant=think]`/`[data-streaming]` 相交；文本非空 ≤8000 字符；排除自身 UI/输入框。
+- 数据层佐证：ContentBlock kind `text|reasoning`；AssistantChatData.status `running|settled|interrupted`（DOM 判据已够，未依赖快照）。
+
+### 6.3 composer 预填
+- 非 React 注入点：`ctx.sessions.binding(id)` → `binding.ctx` → `ctx.conversation.input.for(binding.ctx).setDraft(text)`（不发送；发送是独立 submit）。
+- 会话创建/打开：`ctx.workspaces.connectWorkspace(workspaceId)`（复用同 workspace 首个 blank 或新建，返回 id；是官方 New Session 路径）→ `ctx.sessions.open(id)`。注意 ctx.sessions 公开面 ISessions **无 create**。
+- 时序：open 后 input shell 随 staged 会话装配，故 setDraft 需短重试（实现里 150ms×12）。
+- 目录可见性：blank 行本就隐藏；首个 prompt 接受后 blank→false 才出现（符合"打开期间可显示"）。
+
+### 6.4 插件行加载（package 形状）
+- `__ModuleLoader__.load` 的 id = 包名 = 行 name；URL `/plugins/<包名>/client.js`；判定 = Loader 活动行 + `package.json dsh.client.platform==='web'` + `exports["./client"]`；包放 `$DSH_HOME/profiles/node_modules/`（profile baseUrl 可解析）。
+- 行插入在 profile 自己的 `cordis.patch.yml`（`- insert: [{id,name}]`，与 dsh-web-app 同构）；纯浏览器行 Node 半可空 apply（本插件 index.js 即空 apply）。
+- iframe 双实例：实测 720px iframe 内第二实例正常 boot，sidebar 自动折叠 56px rail、center 664（需 ≥ ~696 宽才不挤压）。
 
 ## 7. 风险登记
 
 | 风险 | 等级 | 缓解 |
 |---|---|---|
-| 单活舞台 → 并排双活需 iframe | 已接受 | B2 方案；套娃禁用 |
-| 会话彻底删除无官方 RPC | 中 | host half 配方或归档 fallback（取证中） |
-| ui-conversation 视图组件不对外导出 | 中 | 面板 = 官方完整 UI（iframe），不自绘 |
-| 内层 UI 在窄面板下挤压 | 低 | 折叠侧栏；宽度自适应；视觉验收 |
+| 单活舞台 → 并排双活需 iframe | 已接受 | B2 方案；side-mode 禁用划词（套娃防护 = URL 参数分支） |
+| 会话无官方删除 API | 中 | archive 语义（6.1）；待上游提供删除后替换 |
+| 磁盘/内存残留（archive 保留文件与 idle agent） | 低 | 与官方行为一致；不可见 |
+| blank 复用竞态（预填未发送期间被 New Session 复用） | 低 | blank 不归档、官方同语义；后续可改为发送后归档 |
+| ui-conversation 视图不对外导出 | 已接受 | 面板 = 官方完整 UI（iframe） |
+| 窄 iframe 下内层挤压 | 低 | 面板默认 min(0.5vw,760px)；实测 720 OK |
 | HMR 仅覆盖 bundle 迭代 | 低 | 新增行走重启流程 |
